@@ -1,7 +1,8 @@
 var utils = require("utils");
 var casper = require('casper').create({
-  verbose: true,
-  logLevel: 'debug'
+//  verbose: true,
+//  logLevel: 'debug',
+//  clientScripts: ['lib/jquery-2.1.3.min.js']
 });
 
 if (!casper.cli.has('username') || !casper.cli.has('password')) {
@@ -28,8 +29,17 @@ casper.thenOpen('https://evision.york.ac.uk', function evisionSignIn () {
 });
 
 casper.then(function () {
+  // @TODO: At the time of writing, waitForUrl crashed PhantomJS where my
+  // perfectly equivalent check below did not.
+  casper.waitFor(function waitForEVisionLoad() {
+    return this.evaluate(function() {
+      return window.location.href == 'https://evision.york.ac.uk/urd/sits.urd/run/siw_sso.signon';
+    });
+  });
+});
+
+casper.then(function evisionHasLoaded () {
   casper.echo(this.getCurrentUrl(), 'INFO');
-  casper.debugHTML();
 });
 
 casper.run();
