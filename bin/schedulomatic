@@ -2,7 +2,7 @@
 
 import os, sys, glob, argparse, csv, time
 
-class DaySchedule:
+class DayTimeUsage:
   def __init__(self, date, start_time, end_time):
     self.date = date
     self.start_minutes = self.time_to_minutes(start_time)
@@ -56,8 +56,53 @@ class DaySchedule:
       space_times.append([space_start_time, space_end_time])
     return space_times
 
-def is_empty(v):
-  return (v is None or len(v) == 0)
+class Schedulomatic:
+  def __init__(self, timetable_directory, day_start_time, day_end_time):
+    self.timetable_directory = timetable_directory
+    self.day_start_time = day_start_time
+    self.day_end_time = day_end_time
+
+    self.daily_time_usages = None
+    self.daily_free_time = None
+
+  def find_daily_time_usages(self):
+    csv_date_format = '%d/%m/%Y'
+    csv_time_format = '%H:%M:%S'
+
+    if not os.path.isdir(self.timetable_directory):
+      raise "Timetable directory not found!"
+
+    self.daily_time_usages = {}
+
+    os.chdir(self.timetable_directory)
+    for f in glob.glob("*.csv"):
+      with open(f, 'rbU') as csvfile:
+        csvreader = csv.DictReader(csvfile, skipinitialspace=True)
+        for row in csvreader:
+          start_date = row['Start Date']
+          start_time = row['Start Time']
+          end_time = row['End Time']
+          if self.is_empty(start_date) or self.is_empty(start_time) or self.is_empty(end_time) or start_date != row['End Date']:
+            continue
+
+          start_date = time.strptime(start_date, csv_date_format)
+          start_time = time.strptime(start_time, csv_time_format)
+          end_time = time.strptime(end_time, csv_time_format)
+
+          if start_date not in self.daily_time_usages:
+            dtu = DayTimeUsage(start_date, self.day_start_time, self.day_end_time)
+            self.daily_time_usages[start_date] = dtu
+          self.daily_time_usages[start_date].add_event(start_time, end_time)
+
+  def find_daily_free_time(self):
+    if self.daily_time_usages is None:
+      self.find_daily_time_usages()
+    self.daily_free_time = {}
+    for date in sorted(self.daily_time_usages):
+      self.daily_free_time[date] = self.daily_time_usages[date].find_space_times()
+
+  def is_empty(self, v):
+    return (v is None or len(v) == 0)
 
 def main():
   argparser = argparse.ArgumentParser(description='Find gaps in timetable CSVs')
@@ -67,7 +112,6 @@ def main():
 
   date_format = '%d/%m/%Y'
   time_format = '%H:%M'
-  csv_time_format = '%H:%M:%S'
 
   day_start_time = time.strptime('08:50', time_format)
   day_end_time = time.strptime('19:40', time_format)
@@ -76,32 +120,13 @@ def main():
     print "Directory {} does not exist.".format(args.timetable_directory)
     return 2
 
-  daily_schedules = {}
+  sched = Schedulomatic(args.timetable_directory, day_start_time, day_end_time)
+  sched.find_daily_free_time()
 
-  os.chdir(args.timetable_directory)
-  for f in glob.glob("*.csv"):
-    with open(f, 'rbU') as csvfile:
-      csvreader = csv.DictReader(csvfile, skipinitialspace=True)
-      for row in csvreader:
-        start_date = row['Start Date']
-        start_time = row['Start Time']
-        end_time = row['End Time']
-        if is_empty(start_date) or is_empty(start_time) or is_empty(end_time) or start_date != row['End Date']:
-          continue
-
-        start_date = time.strptime(start_date, date_format)
-        start_time = time.strptime(start_time, csv_time_format)
-        end_time = time.strptime(end_time, csv_time_format)
-
-        if start_date not in daily_schedules:
-          daily_schedules[start_date] = DaySchedule(start_date, day_start_time, day_end_time)
-        daily_schedules[start_date].add_event(start_time, end_time)
-
-  for date in daily_schedules:
-    day_space_times = daily_schedules[date].find_space_times()
+  for date in sorted(sched.daily_free_time):
     print "On", time.strftime(date_format, date), "free times are:"
-    for st in day_space_times:
-      print "-", time.strftime(time_format, st[0]) + "-" + time.strftime(time_format, st[1])
+    for free_time in sched.daily_free_time[date]:
+      print "-", time.strftime(time_format, free_time[0]) + "-" + time.strftime(time_format, free_time[1])
 
 if __name__ == "__main__":
   sys.exit(main())
