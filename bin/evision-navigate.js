@@ -39,7 +39,7 @@ casper.userAgent('Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1)');
 
 // SIGN INTO EVISION
 casper.thenOpen(evision_url, function evisionSignIn () {
-  casper.echo(casper.getCurrentUrl(), 'INFO');
+  casper.echo('eVision Sign In ' + casper.getCurrentUrl(), 'INFO');
 
   // Try to sign into eVision.
   casper.fill('form[name=login_form]', {
@@ -50,11 +50,12 @@ casper.thenOpen(evision_url, function evisionSignIn () {
 
 // WAIT FOR EVISION TO LOAD
 casper.waitForUrl(evision_signed_in_url, function evisionHasLoaded () {
-  casper.echo(casper.getCurrentUrl(), 'INFO');
+  casper.echo('eVision Loaded ' + casper.getCurrentUrl(), 'INFO');
+  casper.open(timetabling_index_url);
 }, function () {
   casper.echo('eVision did not load. Login credentials may be incorrect.', 'ERROR');
   casper.exit();
-}, 15000);
+}, 25000);
 
 var timetables = {
   'Computer Science': [
@@ -70,38 +71,71 @@ var timetables = {
     'UBCRISCRI3/YR3 Criminology YR3'
   ]
 };
+var timetable_departments = Object.keys(timetables);
 
-for (department in timetables) {
-  var department_routes = timetables[department];
-  for (route in department_routes) {
-    // SELECT DEPARTMENT.
-    casper.thenOpen(timetabling_index_url, function selectDepartment () {
-      casper.evaluate(function () {
-        // Fields seem to be outside a valid <form>.
-        var department_select = document.getElementById('Department_Select');
-        department_select.value = department;
-        department_select.onchange();
-      });
-    });
+var department_index = 0,
+    route_index = 0;
 
-    // SELECT ROUTE.
-    casper.waitForUrl(timetabling_index_url, function selectRoute () {
-      casper.echo(casper.getCurrentUrl(), 'INFO');
-      casper.evaluate(function () {
-        var route_select = document.getElementById('Route_Select');
-        route_select.value = route.split(' ')[0];
-        route_select.parentNode.parentNode.querySelector("input").click();
-      });
-    });
+function getDepartments () {
+  var department = timetable_departments[department_index];
 
-    // PROCESS CALENDAR.
-    casper.waitForUrl(timetabling_calendar_url, function processRouteCalendar () {
-      casper.echo(casper.getCurrentUrl(), 'INFO');
-      casper.echo(casper.evaluate(function () {
-        return document.querySelector("#CurrentlyViewing span").innerText;
-      }), 'WARNING');
-    });
-  }
+  // SELECT DEPARTMENT.
+  casper.echo('Select Department ' + casper.getCurrentUrl(), 'INFO');
+  utils.dump({
+      'Department_Select': department
+  });
+  casper.open(timetabling_index_url, {
+    method: 'post',
+    data: {
+      'Department_Select': department
+    }
+  });
+  casper.then(function () {
+    if (timetables[department].length > 0) {
+      getRoutes(department);
+    }
+  });
 }
+
+function getRoutes (department) {
+  var route = timetables[department][route_index];
+
+  // SELECT ROUTE.
+  casper.echo('Select Route ' + casper.getCurrentUrl(), 'INFO');
+  utils.dump({
+      'Route_Select': route.split(' ')[0],
+      'Submit': 'View Route'
+    });
+  casper.open(timetabling_index_url, {
+    method: 'post',
+    data: {
+      'Route_Select': route.split(' ')[0],
+      'Submit': 'View Route'
+    }
+  });
+
+  // PROCESS CALENDAR.
+  casper.waitForUrl(timetabling_calendar_url, function processRouteCalendar () {
+    casper.echo('Process Calendar ' + casper.getCurrentUrl(), 'INFO');
+    casper.echo(casper.evaluate(function () {
+      return document.querySelector("#CurrentlyViewing span").innerText;
+    }), 'WARNING');
+
+    if (route_index + 1 < timetables[department].length) {
+      route_index++;
+      getRoutes(department);
+    } else if (department_index + 1 < timetable_departments.length) {
+      route_index = 0;
+      department_index++;
+      getDepartments();
+    }
+  }, null, 10000);
+}
+
+casper.then(function () {
+  if (timetable_departments.length > 0) {
+    getDepartments();
+  }
+});
 
 casper.run();
