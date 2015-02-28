@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import os, sys, glob, argparse, csv, time
+import os, sys, glob, argparse, csv, time, calendar
 
 class DayTimeUsage:
   def __init__(self, date, start_time, end_time):
@@ -104,17 +104,61 @@ class Schedulomatic:
   def is_empty(self, v):
     return (v is None or len(v) == 0)
 
+def time_duration(t1, t2):
+  second_duration = calendar.timegm(t1) - calendar.timegm(t2)
+  hours = second_duration / 3600
+  minutes = (second_duration % 3600) / 60
+  return [hours, minutes]
+
+def date_is_after(d1, d2):
+  # is d1 after d2?
+  if (d1.tm_year > d2.tm_year):
+    return True
+  if (d1.tm_year < d2.tm_year):
+    return False
+  if (d1.tm_mon > d2.tm_mon):
+    return True
+  if (d1.tm_mon < d2.tm_mon):
+    return False
+  if (d1.tm_mday > d2.tm_mday):
+    return True
+  if (d1.tm_mday < d2.tm_mday):
+    return False
+  return None
+
+def date_is_before(d1, d2):
+  after = date_is_after(d1, d2)
+  return not after and after is not None
+
+def offset_date(offset):
+  return time.gmtime(time.time() + offset * 86400)
+
 def main():
   argparser = argparse.ArgumentParser(description='Find gaps in timetable CSVs')
   argparser.add_argument('timetable_directory', type=str,
-                         help='Directory containing timetable CSVs.')
+                         help='Directory containing timetable CSVs')
+  argparser.add_argument('--start_date', metavar='DD/MM/YYYY', type=str,
+                         help='Start date or offset (+/-N) to look from')
+  argparser.add_argument('--end_date', metavar='DD/MM/YYYY', type=str,
+                         help='End date or offset (+/-N) to look until')
   args = argparser.parse_args()
 
-  date_format = '%d/%m/%Y'
+  date_format = '%A, %d/%m/%Y'
   time_format = '%H:%M'
 
+  if args.start_date:
+    if args.start_date[0] == '-' or args.start_date[0] == '+':
+      start_date = offset_date(int(args.start_date))
+    else:
+      start_date = time.strptime(args.start_date, date_format)
+  if args.end_date:
+    if args.end_date[0] == '-' or args.end_date[0] == '+':
+      end_date = offset_date(int(args.end_date))
+    else:
+      end_date = time.strptime(args.end_date, date_format)
+
   day_start_time = time.strptime('08:50', time_format)
-  day_end_time = time.strptime('19:40', time_format)
+  day_end_time = time.strptime('21:00', time_format)
 
   if not os.path.isdir(args.timetable_directory):
     print "Directory {} does not exist.".format(args.timetable_directory)
@@ -123,10 +167,23 @@ def main():
   sched = Schedulomatic(args.timetable_directory, day_start_time, day_end_time)
   sched.find_daily_free_time()
 
+  if args.start_date: print "From", time.strftime(date_format, start_date)
+  if args.end_date: print "Until", time.strftime(date_format, end_date)
+  if args.start_date or args.end_date: print
+
   for date in sorted(sched.daily_free_time):
-    print "On", time.strftime(date_format, date), "free times are:"
+    if args.start_date and date_is_before(date, start_date): continue
+    if args.end_date and date_is_after(date, end_date): break
+
+    print time.strftime(date_format, date)
     for free_time in sched.daily_free_time[date]:
-      print "-", time.strftime(time_format, free_time[0]) + "-" + time.strftime(time_format, free_time[1])
+      start_time_formatted = time.strftime(time_format, free_time[0])
+      end_time_formatted = time.strftime(time_format, free_time[1])
+
+      duration = time_duration(free_time[1], free_time[0])
+      duration_formatted = str(duration[0]) + " hours, " + str(duration[1]) + " minutes"
+
+      print "-", start_time_formatted + "-" + end_time_formatted, duration_formatted
 
 if __name__ == "__main__":
   sys.exit(main())
