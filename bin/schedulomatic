@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 
-import os, sys, glob, argparse, csv
+import os, sys, glob, argparse, csv, time
 
 class DaySchedule:
   def __init__(self, date, start_time, end_time):
+    self.date = date
     self.start_minutes = self.time_to_minutes(start_time)
     self.end_minutes = self.time_to_minutes(end_time)
 
@@ -19,21 +20,16 @@ class DaySchedule:
       self.time_slices[i] = 0
 
   def time_to_minutes(self, time):
-    hour, minute, _ = time.split(':')
-    return int(hour) * 60 + int(minute)
+    return time.tm_hour * 60 + time.tm_min
 
   def time_to_relative_minutes(self, time):
     return self.time_to_minutes(time) - self.start_minutes
 
   def relative_minutes_to_time(self, minutes):
     minutes += self.start_minutes
-    hour = str(minutes / 60)
-    if len(hour) == 1:
-      hour = "0" + hour
-    minute = str(minutes % 6)
-    if len(minute) == 1:
-      minute = "0" + minute
-    return hour + ":" + minute
+    hour = minutes / 60
+    minute = minutes % 60
+    return time.strptime(str(hour) + ':' + str(minute), '%H:%M')
 
   def find_space(self):
     spaces = []
@@ -69,30 +65,43 @@ def main():
                          help='Directory containing timetable CSVs.')
   args = argparser.parse_args()
 
+  date_format = '%d/%m/%Y'
+  time_format = '%H:%M'
+  csv_time_format = '%H:%M:%S'
+
+  day_start_time = time.strptime('08:50', time_format)
+  day_end_time = time.strptime('19:40', time_format)
+
   if not os.path.isdir(args.timetable_directory):
     print "Directory {} does not exist.".format(args.timetable_directory)
     return 2
 
-  day_start_time = '08:50:00'
-  day_end_time = '19:40:00'
   daily_schedules = {}
-  total = 0
-  skipped = 0
+
   os.chdir(args.timetable_directory)
   for f in glob.glob("*.csv"):
     with open(f, 'rbU') as csvfile:
       csvreader = csv.DictReader(csvfile, skipinitialspace=True)
       for row in csvreader:
-        total += 1
-        if is_empty(row['Start Date']) or is_empty(row['Start Time']) or is_empty(row['End Time']):
-          skipped += 1
+        start_date = row['Start Date']
+        start_time = row['Start Time']
+        end_time = row['End Time']
+        if is_empty(start_date) or is_empty(start_time) or is_empty(end_time) or start_date != row['End Date']:
           continue
-        if row['Start Date'] not in daily_schedules:
-          daily_schedules[row['Start Date']] = DaySchedule(row['Start Date'], day_start_time, day_end_time)
-        daily_schedules[row['Start Date']].add_event(row['Start Time'], row['End Time'])
 
-  for d in daily_schedules:
-    print d, daily_schedules[d].find_space_times()
+        start_date = time.strptime(start_date, date_format)
+        start_time = time.strptime(start_time, csv_time_format)
+        end_time = time.strptime(end_time, csv_time_format)
+
+        if start_date not in daily_schedules:
+          daily_schedules[start_date] = DaySchedule(start_date, day_start_time, day_end_time)
+        daily_schedules[start_date].add_event(start_time, end_time)
+
+  for date in daily_schedules:
+    day_space_times = daily_schedules[date].find_space_times()
+    print "On", time.strftime(date_format, date), "free times are:"
+    for st in day_space_times:
+      print "-", time.strftime(time_format, st[0]) + "-" + time.strftime(time_format, st[1])
 
 if __name__ == "__main__":
   sys.exit(main())
